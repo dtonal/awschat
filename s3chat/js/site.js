@@ -33,7 +33,7 @@ var ChatApp = window.ChatApp || {};
                 }
                 var body = $('<div class="panel-body">').text(message.message);
                 panel.append(body);
-                panel.append('<div class="panel-footer messageTime" data-time="' + message.time + '">' + moment(message.time).fromNow() + '</div>');
+                panel.append('<div class="panel-footer messageTime" data-time="' + message.time + '">' + moment(parseInt(message.time)).fromNow() + '</div>');
 
                 var row = $('<div class="row">');
                 var buffer = $('<div class="col-xs-4">');
