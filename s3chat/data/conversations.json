@@ -1,0 +1,24 @@
+[
+  {
+    "participants": [
+      "Student",
+      "Brian"
+    ],
+    "id": "1"
+  },
+  {
+    "participants": [
+      "Student",
+      "Frank"
+    ],
+    "id": "2"
+  },
+  {
+    "participants": [
+      "Student",
+      "Frank",
+      "Brian"
+    ],
+    "id": "3"
+  }
+]
