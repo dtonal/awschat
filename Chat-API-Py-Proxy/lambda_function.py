@@ -1,11 +1,8 @@
 import json
-import boto3
 import os
-from boto3.dynamodb.conditions import Key, Attr
 
-dynamodb = boto3.resource('dynamodb')
-chat_messages = dynamodb.Table('Chat-Messages')
-chat_conversations = dynamodb.Table('Chat-Conversations')
+import boto3
+import ConversationDao
 
 s3_client = boto3.client("s3")
 S3_BUCKET_NAME = os.environ.get('BUCKETNAME')
@@ -25,11 +22,9 @@ def lambda_handler(event, context):
         content_object = get_conversations()
         return create_response(prepare_content(content_object['Body']))
     elif proxy.startswith('conversations/'):
-        content_object = read_conversation(extract_id(proxy))
-        #content_object = get_conversation(extract_id(proxy))
-        return create_response(content_object)
-    else:
-        return create_error('No matching route')
+        return create_response(read_conversation(extract_id(proxy)))
+
+    return create_error('No matching route')
 
 
 def extract_id(proxy):
@@ -41,10 +36,7 @@ def get_conversations():
 
 
 def read_conversation(id):
-    data = chat_messages.query(
-        ProjectionExpression='#T, Sender, Message',
-        ExpressionAttributeNames={'#T': 'Timestamp'},
-        KeyConditionExpression=Key('ConversationId').eq(id))
+    data = ConversationDao.query_chat_messages(id)
     items = data['Items']
     print(items)
     return load_messages(data, id, [])
@@ -52,43 +44,43 @@ def read_conversation(id):
 
 def load_messages(data, id, messages):
     for msg in data['Items']:
-        print(msg)
-        messages.append({
-            'sender': msg['Sender'],
-            'time':   str(msg['Timestamp']),
-            'message': msg['Message']
-        })
-        print(messages)
+        messages.append(to_dict(msg))
 
     if data.get('LastEvaluatedKey'):
-        data = chat_messages.query(
-            ProjectionExpression='#T, Sender, Message',
-            ExpressionAttributeNames={'#T': 'Timestamp'},
-            KeyConditionExpression=Key('ConversationId').eq(id),
-            ExclusiveStartKey=data['LastEvaluatedKey']
-        )
+        data = ConversationDao.query_chat_messages(
+            id, data['LastEvaluatedKey'])
         load_messages(data, id, messages)
-    else:
-        details = load_details(id, messages)
-        print('details: ', details)
-        return details
+
+    return load_details(id, messages)
+
+
+def to_dict(msg):
+    return {
+        'sender': msg['Sender'],
+        'time':   str(msg['Timestamp']),
+        'message': msg['Message']
+    }
 
 
 def load_details(id, messages):
-    data = chat_conversations.query(
-        Select='ALL_ATTRIBUTES',
-        KeyConditionExpression=Key('ConversationId').eq(id)
-    )
+    return {
+        'id': id,
+        'participants': read_participants(id),
+        'last': get_last_message_time(messages),
+        'messages': messages
+    }
+
+
+def get_last_message_time(messages):
+    return 0 if len(messages) < 1 else messages[-1]['time']
+
+
+def read_participants(id):
+    data = ConversationDao.query_conversations(id)
     participants = []
     for participant in data['Items']:
         participants.append(participant['Username'])
-
-    return {
-        'id': id,
-        'participants': participants,
-        'last': 0 if len(messages) < 1 else messages[-1]['time'],
-        'messages': messages
-    }
+    return participants
 
 
 def get_conversation(id):
