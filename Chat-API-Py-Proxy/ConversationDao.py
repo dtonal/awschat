@@ -23,3 +23,7 @@ def query_conversations(id):
         Select='ALL_ATTRIBUTES',
         KeyConditionExpression=Key('ConversationId').eq(id)
     )
+
+
+def query_all_conversations():
+    return chat_conversations.scan()

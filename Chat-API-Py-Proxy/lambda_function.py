@@ -4,8 +4,8 @@ import os
 import boto3
 import ConversationDao
 
-s3_client = boto3.client("s3")
-S3_BUCKET_NAME = os.environ.get('BUCKETNAME')
+from itertools import groupby
+
 S3_ORIGIN = os.environ.get('S3ORIGIN')
 
 
@@ -19,8 +19,7 @@ def lambda_handler(event, context):
     proxy = read_proxy(event)
 
     if proxy == 'conversations':
-        content_object = get_conversations()
-        return create_response(prepare_content(content_object['Body']))
+        return create_response(get_conversations())
     elif proxy.startswith('conversations/'):
         return create_response(read_conversation(extract_id(proxy)))
 
@@ -32,13 +31,30 @@ def extract_id(proxy):
 
 
 def get_conversations():
-    return get_s3_object('data/conversations.json')
+    data = ConversationDao.query_all_conversations()
+    return extract_conversations(data['Items'])
+
+
+def key_func(k):
+    return k['ConversationId']
+
+
+def extract_conversations(conv):
+    conversations = []
+    for key, value in groupby(conv, key_func):
+        usernames = []
+        for val in value:
+            usernames.append(val['Username'])
+        conversations.append({
+            'id': key,
+            'participants': usernames
+        })
+
+    return conversations
 
 
 def read_conversation(id):
     data = ConversationDao.query_chat_messages(id)
-    items = data['Items']
-    print(items)
     return load_messages(data, id, [])
 
 
@@ -91,11 +107,6 @@ def prepare_content(body):
     file_content = body.read().decode()
     json_content = json.loads(file_content)
     return json_content
-
-
-def get_s3_object(key):
-    return s3_client.get_object(
-        Bucket=S3_BUCKET_NAME, Key=key)
 
 
 def create_response(json_content):
