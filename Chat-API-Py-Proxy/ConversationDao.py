@@ -37,7 +37,7 @@ def get_conv_ids_for(username):
         ProjectionExpression="ConversationId",
         KeyConditionExpression=Key('Username').eq(username)
     )['Items']
-    return ids
+    return [id['ConversationId'] for id in ids]
 
 
 def get_convs(ids):
@@ -47,11 +47,12 @@ def get_convs(ids):
 
 
 def query_participants(id):
-    return chat_conversations.query(
+    participants = chat_conversations.query(
         Select='SPECIFIC_ATTRIBUTES',
         ProjectionExpression="Username",
         KeyConditionExpression=Key('ConversationId').eq(id)
     )['Items']
+    return [p['Username'] for p in participants]
 
 
 def query_last_msg_time(id):

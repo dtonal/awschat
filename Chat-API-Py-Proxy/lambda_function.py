@@ -31,49 +31,29 @@ def extract_id(proxy):
 
 
 async def get_conversations():
-    convs = ConversationDao.get_conv_ids_for('Student')
-    participants_task = asyncio.create_task(read_participants_for_convs(convs))
-    last_msg_task = asyncio.create_task(read_last_msg_time(convs))
-    await participants_task
-    await last_msg_task
-    for conv in convs:
-        conv['id'] = conv['ConversationId']
-        del conv['ConversationId']
-    print('Result of get_conversations', convs)
-    return convs
+    ids = ConversationDao.get_conv_ids_for('Student')
+    return [await read_conv_data(id) for id in ids]
 
 
-async def read_participants_for_convs(convs):
-    print("read_participants started", datetime.now())
-    for conv in convs:
-        participants = await read_participants(conv['ConversationId'])
-        print(datetime.now(), 'participants for',
-              conv['ConversationId'], participants)
-        conv['participants'] = participants
-    print("read_participants finished", datetime.now())
+async def read_conv_data(id):
+    return {
+        'id': id,
+        'participants': await read_participants(id),
+        'last_msg_time': await last_msg_time(id)
+    }
 
 
 async def read_participants(id):
-    participants = ConversationDao.query_participants(id)
-    return [p['Username'] for p in participants]
+    return ConversationDao.query_participants(id)
+
+
+async def last_msg_time(id):
+    last_msg_time = ConversationDao.query_last_msg_time(id)
+    return str(last_msg_time[0]['Timestamp'])
 
 
 def key_func(k):
     return k['ConversationId']
-
-
-def extract_conversations(conv):
-    conversations = []
-    for key, value in groupby(conv, key_func):
-        usernames = []
-        for val in value:
-            usernames.append(val['Username'])
-        conversations.append({
-            'id': key,
-            'participants': usernames
-        })
-
-    return conversations
 
 
 async def read_conversation(id):
@@ -116,18 +96,6 @@ async def load_details(id, messages):
 
 def get_last_message_time(messages):
     return 0 if len(messages) < 1 else messages[-1]['time']
-
-
-async def read_last_msg_time(convs):
-    print("read_last_msg_time started", datetime.now())
-    for conv in convs:
-        last_msg_time = ConversationDao.query_last_msg_time(
-            conv['ConversationId'])
-        print(datetime.now(), 'last_msg_time for',
-              conv['ConversationId'], last_msg_time)
-        if last_msg_time:
-            conv['last_msg_time'] = str(last_msg_time[0]['Timestamp'])
-    print("read_last_msg_time finished", datetime.now())
 
 
 def prepare_content(body):
