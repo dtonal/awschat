@@ -1,5 +1,6 @@
 import boto3
 from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr
 
 dynamodb = boto3.resource('dynamodb')
 chat_messages = dynamodb.Table('Chat-Messages')
@@ -27,3 +28,37 @@ def query_conversations(id):
 
 def query_all_conversations():
     return chat_conversations.scan()
+
+
+def get_conv_ids_for(username):
+    ids = chat_conversations.query(
+        IndexName='Username-ConversationId-index',
+        Select='SPECIFIC_ATTRIBUTES',
+        ProjectionExpression="ConversationId",
+        KeyConditionExpression=Key('Username').eq(username)
+    )['Items']
+    return ids
+
+
+def get_convs(ids):
+    return chat_conversations.scan(
+        Select='ALL_ATTRIBUTES',
+        FilterExpression=Attr('ConversationId').is_in(ids))['Items']
+
+
+def query_participants(id):
+    return chat_conversations.query(
+        Select='SPECIFIC_ATTRIBUTES',
+        ProjectionExpression="Username",
+        KeyConditionExpression=Key('ConversationId').eq(id)
+    )['Items']
+
+
+def query_last_msg_time(id):
+    return chat_messages.query(
+        ProjectionExpression='#T',
+        Limit=1,
+        ScanIndexForward=False,
+        ExpressionAttributeNames={'#T': 'Timestamp'},
+        KeyConditionExpression=Key('ConversationId').eq(id)
+    )['Items']

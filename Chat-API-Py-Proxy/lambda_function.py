@@ -1,8 +1,9 @@
 import json
 import os
-
 import boto3
 import ConversationDao
+import asyncio
+from datetime import datetime
 
 from itertools import groupby
 
@@ -17,11 +18,10 @@ def read_proxy(event):
 
 def lambda_handler(event, context):
     proxy = read_proxy(event)
-
     if proxy == 'conversations':
-        return create_response(get_conversations())
+        return create_response(asyncio.run(get_conversations()))
     elif proxy.startswith('conversations/'):
-        return create_response(read_conversation(extract_id(proxy)))
+        return create_response(asyncio.run(read_conversation(extract_id(proxy))))
 
     return create_error('No matching route')
 
@@ -30,9 +30,32 @@ def extract_id(proxy):
     return proxy[len('conversations/'):]
 
 
-def get_conversations():
-    data = ConversationDao.query_all_conversations()
-    return extract_conversations(data['Items'])
+async def get_conversations():
+    convs = ConversationDao.get_conv_ids_for('Student')
+    participants_task = asyncio.create_task(read_participants_for_convs(convs))
+    last_msg_task = asyncio.create_task(read_last_msg_time(convs))
+    await participants_task
+    await last_msg_task
+    for conv in convs:
+        conv['id'] = conv['ConversationId']
+        del conv['ConversationId']
+    print('Result of get_conversations', convs)
+    return convs
+
+
+async def read_participants_for_convs(convs):
+    print("read_participants started", datetime.now())
+    for conv in convs:
+        participants = await read_participants(conv['ConversationId'])
+        print(datetime.now(), 'participants for',
+              conv['ConversationId'], participants)
+        conv['participants'] = participants
+    print("read_participants finished", datetime.now())
+
+
+async def read_participants(id):
+    participants = ConversationDao.query_participants(id)
+    return [p['Username'] for p in participants]
 
 
 def key_func(k):
@@ -53,21 +76,23 @@ def extract_conversations(conv):
     return conversations
 
 
-def read_conversation(id):
+async def read_conversation(id):
     data = ConversationDao.query_chat_messages(id)
-    return load_messages(data, id, [])
+    print('read_conversation', data)
+    return await load_messages(data, id, [])
 
 
-def load_messages(data, id, messages):
+async def load_messages(data, id, messages):
     for msg in data['Items']:
         messages.append(to_dict(msg))
 
+    print('load_messages mesages:', messages)
     if data.get('LastEvaluatedKey'):
         data = ConversationDao.query_chat_messages(
             id, data['LastEvaluatedKey'])
         load_messages(data, id, messages)
 
-    return load_details(id, messages)
+    return await load_details(id, messages)
 
 
 def to_dict(msg):
@@ -78,29 +103,31 @@ def to_dict(msg):
     }
 
 
-def load_details(id, messages):
-    return {
+async def load_details(id, messages):
+    details = {
         'id': id,
-        'participants': read_participants(id),
+        'participants': await read_participants(id),
         'last': get_last_message_time(messages),
         'messages': messages
     }
+    print('load_details:', details)
+    return details
 
 
 def get_last_message_time(messages):
     return 0 if len(messages) < 1 else messages[-1]['time']
 
 
-def read_participants(id):
-    data = ConversationDao.query_conversations(id)
-    participants = []
-    for participant in data['Items']:
-        participants.append(participant['Username'])
-    return participants
-
-
-def get_conversation(id):
-    return get_s3_object('data/conversations/'+id+'.json')
+async def read_last_msg_time(convs):
+    print("read_last_msg_time started", datetime.now())
+    for conv in convs:
+        last_msg_time = ConversationDao.query_last_msg_time(
+            conv['ConversationId'])
+        print(datetime.now(), 'last_msg_time for',
+              conv['ConversationId'], last_msg_time)
+        if last_msg_time:
+            conv['last_msg_time'] = str(last_msg_time[0]['Timestamp'])
+    print("read_last_msg_time finished", datetime.now())
 
 
 def prepare_content(body):
